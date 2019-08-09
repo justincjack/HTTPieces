@@ -6,7 +6,7 @@
 //#define CGI_NO_RESPAWN
 
 
-void shutdown_cgi( void ) {
+void shutdown_cgi(  CGI_ID cgi_id_to_kill  ) {
     int i = 0, j = 0;
     PCGI p = 0;
     CGI_ID cgi_id = 0;
@@ -38,43 +38,54 @@ void shutdown_cgi( void ) {
     sem_post(&cgi_process_watcher_action);
     
     http_lock(cgi_list_mutex);
+    
+    /* Shut down all workers by this CGI_ID */
     for (; i < cgi_worker_num; i++) {
         p = cgi_worker_list[i];
-        if (p->state == CGI_IDLE) {
-            p->state = CGI_DEAD;
-            kill(p->script_pid, SIGKILL);
-            if ( p->script_err[CGI_READ] != -1) {
-                close(p->script_err[CGI_READ]);
-                fclose(p->fscript_err);
-            }
-            
-            if ( p->script_in[CGI_WRITE] != -1) {
-                fclose(p->fscript_in);
-                close(p->script_in[CGI_WRITE]);
-            }
-            
-            if ( p->script_out[CGI_READ] != -1) {
-                fclose(p->fscript_out);
-                close(p->script_out[CGI_READ]);
-            }
-            free(p);
-        } 
+        if (p->cgi_id == cgi_id_to_kill) {
+            if (p->state == CGI_IDLE) {
+                p->state = CGI_DEAD;
+                kill(p->script_pid, SIGKILL);
+                if ( p->script_err[CGI_READ] != -1) {
+                    close(p->script_err[CGI_READ]);
+                    fclose(p->fscript_err);
+                }
+
+                if ( p->script_in[CGI_WRITE] != -1) {
+                    fclose(p->fscript_in);
+                    close(p->script_in[CGI_WRITE]);
+                }
+
+                if ( p->script_out[CGI_READ] != -1) {
+                    fclose(p->fscript_out);
+                    close(p->script_out[CGI_READ]);
+                }
+                free(p);
+            } 
+            cgi_worker_list[i] = 0;
+        }
     }
-    free(cgi_worker_list);
-    cgi_worker_num = 0;
     http_unlock(cgi_list_mutex);
     
     http_lock(cgi_reg_mutex);
     for (i = 0; i < num_cgis_reg; i++) {
-        cgi_id = _cgi_list[i];
-        for (j = 0; cgi_id->argv[j]; j++) {
-            free(cgi_id->argv[j]);
+        if (_cgi_list[i] == cgi_id_to_kill) {
+            cgi_id = _cgi_list[i];
+            for (j = 0; cgi_id->argv[j]; j++) {
+                free(cgi_id->argv[j]);
+            }
+            free(cgi_id->argv);
+            
+            /* Free environmental variable string */
+            for (j = 0; cgi_id->envp[j]; j++) {
+                free(cgi_id->envp[j]);
+            }
+            free(cgi_id->envp);
+            
+            free(cgi_id);
+            _cgi_list[i] = 0;
         }
-        free(cgi_id->argv);
-        free(cgi_id);
     }
-    free(_cgi_list);
-    num_cgis_reg = 0;
     http_unlock(cgi_reg_mutex);
 }
 
@@ -649,7 +660,8 @@ char *cgi(CGI_ID cgi_id, const char *pscript, size_t script_len, size_t *output_
         }
     }
     
-    if (!pcgi) { /* We couldn't find any available CGI processes! */
+    if (!pcgi) { /* We couldn't find any available CGI processes!
+                  */
 #ifdef CGI_NO_RESPAWN
         cgi_error("cgi() ----- MAX WORKER limit reached. Cannot spawn new interpreter instance.\n\n");
         http_unlock(cgi_list_mutex);

@@ -41,6 +41,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <pwd.h>
 #include "http.h"
 #include "debug.h"
 #include "cgi.h"
@@ -280,7 +281,7 @@ public:
                                     this->desired_protocols = (HTTP10|HTTP11|HTTP20);
                                     this->desired_methods = METHODS_NONE;
                                     memset(this->desired_specific_request_path, 0, 1024);
-                                    memset(this->delegate_username, 0, 1024);
+                                    memset(this->delegate_username, 0, 255);
                                     this->delegate_uid = -1;
                                 };
                                 
@@ -350,16 +351,24 @@ public:
 
 
 class SETTINGS_CGI {
+private:
+    PCGI_ENV                    pcgi_env;
+    char                        **cgi_argv;
+    int                         started;
 public:
-                                SETTINGS_CGI() {
-                                    this->worker_count = 0;
-                                    this->cgi = 0;
-                                    this->env_args_used = 0;
-                                }
+                                SETTINGS_CGI();
+                                
+    struct _cgi_result {
+        char        *output;
+        size_t      output_length;
+        
+    }                           cgi_result;
+                                
     int                         worker_count;
     HTTP_STRING                 name;
     HTTP_STRING                 path_to_interpreter;
     HTTP_STRING                 run_as_user;
+    int                         run_as_user_id;
     HTTP_STRING                 home_dir;
     HTTP_STRING                 working_dir;
     SETTINGS_STRING_ARRAY       args;
@@ -367,10 +376,41 @@ public:
         HTTP_STRING             name;
         HTTP_STRING             value;
     } cgi_env[30];
+    struct _cgi_arg_ {
+        HTTP_STRING             value;
+    } cgi_arg[30];
+    
+    size_t                      args_used;
     size_t                      env_args_used;
     SETTINGS_STRING_ARRAY       file_types; /*
                                              * List of file extensions to be run through this interpreter.
                                              **/
+    /*!
+     * \brief Starts up the CGI processes and subsystem
+     * 
+     * \param Nothing
+     * 
+     * \return On Success         A CGI_ID
+     * \return On Failure         0
+     * 
+     **/
+    CGI_ID                      start();
+    
+    /*!
+     * \brief Shuts down all CGI processes.
+     * 
+     * \param Nothing
+     * 
+     * \return On Success         1
+     * \return On Failure         0
+     * 
+     **/
+    int                         stop();
+    
+    char                        *process( const char *pscript, size_t length);
+    char                        *process( const char *pscript );
+    char                        *process( char *pscript, size_t length);
+    char                        *process( char *pscript );
     CGI_ID                      cgi;
 };
 
@@ -392,14 +432,20 @@ public:
     uint32_t                    allowed_methods;        // GET by default
     HTTP_STRING                 server_name;            // Default is the machine's hostname
     SETTINGS_STRING_ARRAY       http_cors;              // The list of Origins allowed for REST API calls or other cross-origin requests.
-    DELEGATE                    *pdelegate;             // If another process wants to process data from this connection.
     SETTINGS_PERMISSIONS        listener_permissions;
     
     
     /* CLEAN UP HERE!!! MAKE SURE WE MAINTAIN THE STATE OF THESE LISTS */
     
+    DELEGATE                    **ppdelegates;          // Null-terminated array of delegates
+    size_t                      delegate_list_size;     // Number of array elements allocated for "ppdelegates"
+    
+    
     SETTINGS_DIRECTORY          **directories;          // Null-terminated array of directories with explicit permissions.
+    size_t                      directory_list_size;    // Number of array elements allocated for "directories"
+    
     SETTINGS_CGI                **cgi_list;             // Null-terminated array of pointers to use to register CGI handlers.
+    size_t                      cgi_list_size;          // Number of array elements allocated for "cgi_list"
     
     int                         get_tls_value( const char *ptr );
     int                         get_tls_value( char *ptr );

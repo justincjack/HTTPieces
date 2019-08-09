@@ -3,6 +3,70 @@
 #include "jstring.h"
 
 
+SETTINGS_CGI::SETTINGS_CGI() {
+    this->worker_count = 0;
+    this->cgi = 0;
+    this->env_args_used = 0;
+    this->args_used = 0;
+    this->run_as_user_id = -1;
+    
+    /* Init PCGI_ENV Environmental Variables */
+    this->pcgi_env = 0;
+    this->cgi_argv = 0;
+    this->started = 0;
+}
+
+CGI_ID SETTINGS_CGI::start( void ) {
+    size_t total_env_vars = 0, extra_env_vars = 0,
+            total_arg_vars = 0;
+    if (this->started == 1) return this->cgi;
+    
+    // Working here!!!!
+    
+//    this->pcgi_env->envp = 0; /* List of additional environmental variables, those in addition to the pre-defined ones below */
+//    this->pcgi_env->homedir = 0;
+//    this->pcgi_env->hostname = 0;
+//    this->pcgi_env->path = 0;
+//    this->pcgi_env->user = 0;
+//    this->pcgi_env->vcount = 0;
+//    this->pcgi_env->working_dir = 0;
+    
+    
+    
+    this->cgi = cgi_register_interpreter_argv(this->pcgi_env, this->worker_count, this->cgi_argv);
+}
+
+int SETTINGS_CGI::stop( void ) {
+    if (!this->started) return 1;
+    shutdown_cgi(this->cgi);
+    this->started = 0;
+    return 1;
+}
+
+char *SETTINGS_CGI::process( const char *pscript, size_t script_len ) {
+    this->cgi_result.output = 0;
+    this->cgi_result.output_length = 0;
+    this->cgi_result.output = cgi(this->cgi, pscript, script_len, &this->cgi_result.output_length);
+    return this->cgi_result.output;
+}
+
+char *SETTINGS_CGI::process( const char *pscript ) {
+    return this->process(pscript, strlen(pscript));
+}
+
+char *SETTINGS_CGI::process( char *pscript, size_t length) {
+    return this->process((const char *)pscript, length);
+}
+
+char *SETTINGS_CGI::process( char *pscript ) {
+    return this->process((const char *)pscript, strlen(pscript));
+}
+
+
+
+
+
+
 size_t SETTINGS_STRING_ARRAY::count() {
     return this->num;
 }
@@ -281,7 +345,6 @@ LISTENER::LISTENER( SETTINGS *s ) {
     }
     gethostname(hostname, 1024);
     this->server_name.set(hostname);
-    this->pdelegate       = 0;
 };
 
 
@@ -342,9 +405,11 @@ int SETTINGS::load( const char *path_to_settings ) {
     SETTINGS_CONTEXT main = SC_UNDEFINED, sub_list[100], *sub = &sub_list[0];
     SETTINGS_PERMISSIONS *permissions = &this->general.default_permissions;
     SETTINGS_CGI *psetting_cgi = 0;
+    DELEGATE *pdelegate = 0;
     size_t line_length = 0;
     JSTRING::jsstring val, key, string,  **list = 0;
     int i = 0;
+    void *swap = 0;
     
     memset(sub_list, SC_UNDEFINED, sizeof(sub_list));
     f = fopen(path_to_settings, "r");
@@ -416,28 +481,28 @@ int SETTINGS::load( const char *path_to_settings ) {
                             (int)key.length, key.ptr,
                             (int)val.length, val.ptr
                             );
-                        if (key.is("name")) {
+                        if (key.is("name")) { // LISTENER
                             l->name.set(val.ptr, val.length);
-                        } else if (key.is("ipversion")) {
+                        } else if (key.is("ipversion")) {// LISTENER
                             l->ipversion = val.toint();
                             l->ipaddr.version = l->ipversion;
-                        } else if (key.is("ipaddr")) {              
+                        } else if (key.is("ipaddr")) {            // LISTENER  
                             l->ipaddr.set(val.ptr, val.length);
-                        } else if (key.is("security-min-proto")) {      
+                        } else if (key.is("security-min-proto")) {  // LISTENER    
                             l->security_min_proto = l->get_tls_value(val.ptr);
-                        } else if (key.is("security-max-proto")) {      
+                        } else if (key.is("security-max-proto")) {   // LISTENER   
                             l->security_max_proto = l->get_tls_value(val.ptr);
-                        } else if (key.is("listener_type")) {
+                        } else if (key.is("listener_type")) {// LISTENER
                             if (val.is("LT_TLS")) {
                                 l->listener_type = LT_TLS;
-                            } else if (val.is("LT_TCP")) {
+                            } else if (val.is("LT_TCP")) {// LISTENER
                                 l->listener_type = LT_TCP;
-                            } else if (val.is("LT_UDP")) {
+                            } else if (val.is("LT_UDP")) {// LISTENER
                                 l->listener_type = LT_UDP;
-                            } else if (val.is("LT_DTLS")) {
+                            } else if (val.is("LT_DTLS")) {// LISTENER
                                 l->listener_type = LT_DTLS;
                             }
-                        } else if (key.is("protocol_list")) {       /* Comma delimited */
+                        } else if (key.is("protocol_list")) {   // LISTENER    /* Comma delimited */
                             list = JSTRING::split(val.ptr, ',', val.length);
                             if (list) {
                                 for (i = 0; list[i]; i++) {
@@ -459,17 +524,17 @@ int SETTINGS::load( const char *path_to_settings ) {
                                 JSTRING::freesplit(list);
                             }
                             printf("\n");
-                        } else if (key.is("port")) {
+                        } else if (key.is("port")) {// LISTENER
                             l->port = (uint16_t)val.toint();
-                        } else if (key.is("tls_cert_file")) {
+                        } else if (key.is("tls_cert_file")) {// LISTENER
                             l->certificate_info.set_cert_file(val.ptr, val.length);
-                        } else if (key.is("tls_chain_file")) {
+                        } else if (key.is("tls_chain_file")) {// LISTENER
                             l->certificate_info.set_chain_file(val.ptr, val.length);
-                        } else if (key.is("tls_key_file")) {
+                        } else if (key.is("tls_key_file")) {// LISTENER
                             l->certificate_info.set_key_file(val.ptr, val.length);
-                        } else if (key.is("http_document_root")) {
+                        } else if (key.is("http_document_root")) {// LISTENER
                             l->document_root.set(val.ptr, val.length);
-                        } else if (key.is("allowed_methods")) {     /* Comma delimited */
+                        } else if (key.is("allowed_methods")) {  // LISTENER   /* Comma delimited */
                             list = JSTRING::split(val.ptr, ',', val.length);
                             if (list) {
                                 for (i = 0; list[i]; i++) {
@@ -506,7 +571,7 @@ int SETTINGS::load( const char *path_to_settings ) {
                                 }
                                 JSTRING::freesplit(list);
                             }
-                        } else if (key.is("protected_methods")) {   /* Comma delimited */
+                        } else if (key.is("protected_methods")) {  // LISTENER /* Comma delimited */
                             list = JSTRING::split(val.ptr, ',', val.length);
                             if (list) {
                                 for (i = 0; list[i]; i++) {
@@ -543,8 +608,7 @@ int SETTINGS::load( const char *path_to_settings ) {
                                 }
                                 JSTRING::freesplit(list);
                             }
-                            
-                        } else if (key.is("http_cors")) {           /* Comma delimited */
+                        } else if (key.is("http_cors")) {    // LISTENER       /* Comma delimited */
                             list = JSTRING::split(val.ptr, ',', val.length);
                             if (list) {
                                 for (i = 0; list[i]; i++) {
@@ -555,11 +619,11 @@ int SETTINGS::load( const char *path_to_settings ) {
                                 }
                                 JSTRING::freesplit(list);
                             }
-                        } else if (key.is("server_name")) {
+                        } else if (key.is("server_name")) {// LISTENER
                             if (!val.is("$hostname")) {
                                 l->server_name.set(val.ptr, val.length);
                             }
-                        } else if (key.is("auth_type")) {
+                        } else if (key.is("auth_type")) {// LISTENER
                             if (val.is("open")) {
                                 permissions->auth_type = AUTH_OPEN;
                             } else if (val.is("userpass")) {
@@ -567,9 +631,9 @@ int SETTINGS::load( const char *path_to_settings ) {
                             } else if (val.is("userpass_digest")) {
                                 permissions->auth_type = AUTH_USER_PASS_DIGEST;
                             }
-                        } else if (key.is("username")) {
+                        } else if (key.is("username")) {// LISTENER
                             permissions->username.set(val.ptr, val.length);
-                        } else if (key.is("password")) {
+                        } else if (key.is("password")) {// LISTENER
                             permissions->password.set(val.ptr, val.length);
                         }
                     } else if (*sub == SC_DELEGATE) {
@@ -578,46 +642,85 @@ int SETTINGS::load( const char *path_to_settings ) {
                             (int)key.length, key.ptr,
                             (int)val.length, val.ptr
                             );
-                    } else if (*sub == SC_CGI) {
+                        if (pdelegate) {
+                            
+                        }
+                    } else if (*sub == SC_CGI) { // CGI
                         debug(3, "In [listener] <cgi> context looking at \"%.*s\" = \"%.*s\"\n", 
                             (int)key.length, key.ptr,
                             (int)val.length, val.ptr
                             );
-                        if (key.is("env_")) { /* Add a new environmental variable */
-                            if (psetting_cgi->env_args_used < 30) {
-                                psetting_cgi->cgi_env[psetting_cgi->env_args_used].name.set( &key.ptr[4], key.length-4);
-                                psetting_cgi->cgi_env[(psetting_cgi->env_args_used++)].value.set(val.ptr, val.length);
-                            } else {
-                                error("Only 30 (thirty) max environmental variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
-                            }
-                        } else if (key.is("interpreter_path")) {
-                        } else if (key.is("accept_type")) {             /* Comma delimited list */
-                            list = JSTRING::split(val.ptr, ',', val.length);
-                            if (list) {
-                                for (i = 0; list[i]; i++) {
-                                    string.ptr = JSTRING::trim(list[i]->ptr, list[i]->length, &string.length);
-                                    if (string.length > 0) {
-                                        if (string.ptr[0] == '.') { /* Normalize...remove the "." */
-                                            psetting_cgi->file_types.push(&string.ptr[1], (string.length - 1));
+                        if (psetting_cgi) {
+                            if (key.is("env_")) { /* Add a new environmental variable */
+                                if (psetting_cgi->env_args_used < 30) {
+                                    psetting_cgi->cgi_env[psetting_cgi->env_args_used].name.set( &key.ptr[4], key.length-4);
+                                    psetting_cgi->cgi_env[(psetting_cgi->env_args_used++)].value.set(val.ptr, val.length);
+                                } else {
+                                    error("Only 30 (thirty) max environmental variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
+                                }
+                            } else if (key.is("interpreter_args")) { // CGI ... Comma delimited list 
+                                list = JSTRING::split(val.ptr, ',', val.length);
+                                if (list) {
+                                    for (i = 0; list[i]; i++) {
+                                        if (psetting_cgi->args_used < 30) {
+                                            psetting_cgi->cgi_arg[(psetting_cgi->args_used++)].value.set(list[i]->ptr, list[i]->length);
                                         } else {
-                                            psetting_cgi->file_types.push(string.ptr, string.length);
+                                            error("Only 30 (thirty) max argv variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
                                         }
                                     }
                                 }
-                                JSTRING::freesplit(list);
+                            } else if (key.is("interpreter_path")) { // CGI
+                                psetting_cgi->path_to_interpreter.set(val.ptr, val.length);
+                            } else if (key.is("accept_type")) { //CGI ... Comma delimited list 
+                                list = JSTRING::split(val.ptr, ',', val.length);
+                                if (list) {
+                                    printf("\tlist is valid.\n");
+                                    for (i = 0; list[i]; i++) {
+                                        printf("\tLooking at element %d, which is \"%.*s\" ( %zu bytes)\n", 
+                                                (int)i, // %d
+                                                (int)list[i]->length, // %.*s
+                                                list[i]->ptr,  // %.*s
+                                                list[i]->length // %zu
+                                                );
+                                        string.ptr = JSTRING::trim(list[i]->ptr, list[i]->length, &string.length);
+                                        printf("\t%.*s", (int)string.length, string.ptr);
+                                        if (string.length > 0) {
+                                            if (string.ptr[0] == '.') { /* Normalize...remove the "." */
+                                                psetting_cgi->file_types.push(&string.ptr[1], (string.length - 1));
+                                            } else {
+                                                psetting_cgi->file_types.push(string.ptr, string.length);
+                                            }
+                                        }
+                                    }
+                                    debug(3,"Done looking...\n");
+                                } else {
+                                    debug(3,"List could not...\n");
+                                }
+                            } else if (key.is("worker_count")) { // CGI
+                                if (val.length > 0) {
+                                    psetting_cgi->worker_count = (int)strtoul(val.ptr, 0, 10);
+                                }
+                                debug(3, "CGI Worker count: %d\n", psetting_cgi->worker_count);
+                            } else if (key.is("working_directory")) { // CGI
+                                psetting_cgi->working_dir.set(val.ptr, val.length);
+                            } else if (key.is("run_as_user")) { // CGI
+                                struct passwd *pwd = 0;
+                                /* Try to get user's home directory */
+                                psetting_cgi->run_as_user.set(val.ptr, val.length);
+                                pwd = getpwnam(psetting_cgi->run_as_user.val());
+                                if (pwd) {
+                                    psetting_cgi->run_as_user_id = pwd->pw_uid;
+                                    psetting_cgi->home_dir.set(pwd->pw_dir);
+                                }
+                            } else {
+                                debug(3, "Unrecognized setting \"%.*s\" for sub category <cgi> in configuration file on line %d\n",
+                                        (int)key.length,
+                                        key.ptr,
+                                        current_line_number);
                             }
-                        } else if (key.is("worker_count")) {
-                        } else if (key.is("working_directory")) {
-                        } else if (key.is("run_as_user")) {
-                            /* Try to get user's home directory */
-                            
                         } else {
-                            debug(3, "Unrecognized setting \"%.*s\" for sub category <cgi> in configuration file on line %d\n",
-                                    (int)key.length,
-                                    key.ptr,
-                                    current_line_number);
+                            error("In CGI subcontext, but the pointer to 'psetting_cgi' is INVALID!\n");
                         }
-                        
                     }
                     
                 } else {
@@ -629,6 +732,9 @@ int SETTINGS::load( const char *path_to_settings ) {
                             continue;
                         }
                         string.ptr = JSTRING::between(pline, "/>", &string.length);
+                        if (*sub == SC_CGI) {
+                            debug(3, "Closing out of a CGI subsection.\n");
+                        }
                         if (
                                 !(string.is("directory") && *sub == SC_DIRECTORY) &&
                                 !(string.is("delegate") && *sub == SC_DELEGATE) &&
@@ -655,14 +761,76 @@ int SETTINGS::load( const char *path_to_settings ) {
                                 debug(3, "Entered <delegate> sub category at line %d, but ths DELEGATE class is not yet implemented!\n", current_line_number);
                                 sub_list[++sub_itr] = SC_DELEGATE;
                                 sub = &sub_list[sub_itr];
+                                pdelegate = 0;
+                                if (l->ppdelegates == 0) {
+                                    l->ppdelegates = (DELEGATE **)malloc( sizeof(DELEGATE *) * 20  ); // Allocate space for 20 CGI entries
+                                    if (!l->ppdelegates) {
+                                        error("*** Failed to allocate memory for CGI ***\n");
+                                        return 0;
+                                    }
+                                    l->delegate_list_size = 20;
+                                    memset(l->ppdelegates, 0, sizeof(DELEGATE *) * 20);
+                                    pdelegate = l->ppdelegates[0] = new DELEGATE();
+                                } else {
+                                    for (i = 0; l->delegate_list_size; i++) {
+                                        if (l->ppdelegates[i] == 0) {
+                                            pdelegate = l->ppdelegates[i] = new DELEGATE();
+                                            break;
+                                        }
+                                    }
+                                    if (!pdelegate) {
+                                        /* The list was full.  Extend it. */
+                                        swap = realloc(l->ppdelegates, (sizeof(DELEGATE *) * (l->delegate_list_size + 20)));
+                                        if (!swap) {
+                                            error("*** Failed to extend memory allocation for another CGI entry ***\n");
+                                            return 0;
+                                        }
+                                        l->ppdelegates = (DELEGATE **)swap;
+                                        l->delegate_list_size+=20;
+                                    }
+                                    pdelegate = l->ppdelegates[l->delegate_list_size] = new DELEGATE();
+                                }
+                                if (!pdelegate) {
+                                    error("*** Failed to initialize 'psetting_cgi' to save a CGI entry ***\n");
+                                    return 0;
+                                }                                
                             } else if (string.is("cgi")) {
                                 sub_list[++sub_itr] = SC_CGI;
                                 sub = &sub_list[sub_itr];
+                                psetting_cgi = 0;
                                 if (l->cgi_list == 0) {
-                                    
+                                    l->cgi_list = (SETTINGS_CGI **)malloc( sizeof(SETTINGS_CGI *) * 20  ); // Allocate space for 20 CGI entries
+                                    if (!l->cgi_list) {
+                                        error("*** Failed to allocate memory for CGI ***\n");
+                                        return 0;
+                                    }
+                                    l->cgi_list_size = 20;
+                                    memset(l->cgi_list, 0, sizeof(SETTINGS_CGI *) * 20);
+                                    psetting_cgi = l->cgi_list[0] = new SETTINGS_CGI();
                                 } else {
-                                    
+                                    for (i = 0; l->cgi_list_size; i++) {
+                                        if (l->cgi_list[i] == 0) {
+                                            psetting_cgi = l->cgi_list[i] = new SETTINGS_CGI();
+                                            break;
+                                        }
+                                    }
+                                    if (!psetting_cgi) {
+                                        /* The list was full.  Extend it. */
+                                        swap = realloc(l->cgi_list, (sizeof(SETTINGS_CGI *) * (l->cgi_list_size + 20)));
+                                        if (!swap) {
+                                            error("*** Failed to extend memory allocation for another CGI entry ***\n");
+                                            return 0;
+                                        }
+                                        l->cgi_list = (SETTINGS_CGI **)swap;
+                                        l->cgi_list_size+=20;
+                                    }
+                                    psetting_cgi = l->cgi_list[l->cgi_list_size] = new SETTINGS_CGI();
                                 }
+                                if (!psetting_cgi) {
+                                    error("*** Failed to initialize 'psetting_cgi' to save a CGI entry ***\n");
+                                    return 0;
+                                }
+                                
                             } else if (string.is("file")) {
                                 sub_list[++sub_itr] = SC_FILE;
                                 sub = &sub_list[sub_itr];

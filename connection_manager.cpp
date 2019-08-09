@@ -46,6 +46,19 @@ void *listener_tls( void *pconnection_info ) {
         return 0;
     }
     
+    
+    /* Start up CGI Modules (if any) */
+    if (plistener->cgi_list_size > 0) {
+        for (i = 0; i < plistener->cgi_list_size; i++) {
+            if (!plistener->cgi_list[i]->start()) {
+                for (; i >=0; i--) {
+                    plistener->cgi_list[i]->stop();
+                }
+                return 0;
+            }
+        }
+    }
+    
     ci->okay_to_run = 1;
     
     /* Check for validity of IP version */

@@ -309,7 +309,7 @@ extern "C" {
     int cgi_worker( PCGI pcgi );
     
     
-    void shutdown_cgi( void );
+    void shutdown_cgi( CGI_ID cgi_id );
     
     /*!
      * \brief This thread runs and watches a semaphore that is signaled every time
