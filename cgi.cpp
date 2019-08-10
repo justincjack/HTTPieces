@@ -624,7 +624,7 @@ CGI_ID cgi_register_interpreter(PCGI_ENV env, int worker_count, int num_args, co
     return cgi_register_interpreter_argv(env, worker_count, argv);
 }
 
-char *cgi(CGI_ID cgi_id, const char *pscript, size_t script_len, size_t *output_size) {
+char *cgi_exec(CGI_ID cgi_id, const char *pscript, size_t script_len, size_t *output_size) {
     PCGI pcgi = 0, *pcgi_swap = 0;
     char *swap = 0, *ret_buffer = 0;
     size_t pcgi_swap_size = 0;

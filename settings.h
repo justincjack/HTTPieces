@@ -283,8 +283,9 @@ public:
                                     memset(this->desired_specific_request_path, 0, 1024);
                                     memset(this->delegate_username, 0, 255);
                                     this->delegate_uid = -1;
+                                    this->plistner_parent = 0;
                                 };
-                                
+    LISTENER                    *plistner_parent;
     char                        unix_socket_path[1024];                 // UNIX socket path
     int                         max_connections;                        // The max number of connections that HTTPieces will establish 
                                                                         // to the DELEGATE.  Default is -1 (unlimited)
@@ -357,34 +358,44 @@ private:
     int                         started;
 public:
                                 SETTINGS_CGI();
-                                
+    LISTENER                    *plistener_parent;        
     struct _cgi_result {
         char        *output;
         size_t      output_length;
         
-    }                           cgi_result;
+    }                           cgi_result;             /* This is the struct that contains
+                                                         * the output after a CGI request ( SETTINGS_CGI::process() )
+                                                         * has been called.
+                                                         **/
                                 
     int                         worker_count;
     HTTP_STRING                 name;
-    HTTP_STRING                 path_to_interpreter;
-    HTTP_STRING                 run_as_user;
+    HTTP_STRING                 path_to_interpreter;    // ARGV
+    HTTP_STRING                 run_as_user;            // ENV
     int                         run_as_user_id;
-    HTTP_STRING                 home_dir;
-    HTTP_STRING                 working_dir;
+    HTTP_STRING                 home_dir;               // ENV
+    HTTP_STRING                 working_dir;            // ENV
+    HTTP_STRING                 hostname;               // ENV - Hostname.  Will use the listener's "server_name" if this isn't set
     SETTINGS_STRING_ARRAY       args;
     struct _cgi_env_ {
-        HTTP_STRING             name;
-        HTTP_STRING             value;
-    } cgi_env[30];
-    struct _cgi_arg_ {
-        HTTP_STRING             value;
-    } cgi_arg[30];
+        HTTP_STRING name;
+        HTTP_STRING value;
+    }                           cgi_env[30];            // ARGV
+    struct _cgi_arg_ {                                  
+        HTTP_STRING value;
+    }                           cgi_arg[30];            // ENV
     
     size_t                      args_used;
     size_t                      env_args_used;
     SETTINGS_STRING_ARRAY       file_types; /*
                                              * List of file extensions to be run through this interpreter.
                                              **/
+    
+    int                         is_my_file_type( const char *, size_t);
+    int                         is_my_file_type( const char *);
+    int                         is_my_file_type( char *      , size_t);
+    int                         is_my_file_type( char *);
+    
     /*!
      * \brief Starts up the CGI processes and subsystem
      * 
@@ -407,6 +418,27 @@ public:
      **/
     int                         stop();
     
+    /*!
+     * \brief This will take a script and run it through a waiting CGI process.
+     *        The function will return a pointer to the buffer holding the output
+     *        of the script, or NULL if there was an error.  I would suggest not
+     *        using the returned pointer directly - instead, the pointer can also
+     *        be found in this SETTINGS_CGI object's cgi_result struct which also
+     *        tells you the number of octect received i.e. the size of the buffer.
+     * 
+     * 
+     * \param pscript                   - A pointer to the buffer holding the script
+     *                                    to run.
+     * 
+     * \param length                    - The length in bytes of the scipt to process
+     * 
+     * \return On Success               - Non-Zero.  The scipts output will be in the
+     *                                    SETTINGS_CGI object's "cgi_result" member.
+     * 
+     * \return On failure               - ZERO
+     *                      
+     * 
+     */
     char                        *process( const char *pscript, size_t length);
     char                        *process( const char *pscript );
     char                        *process( char *pscript, size_t length);

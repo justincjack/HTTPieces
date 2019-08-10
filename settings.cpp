@@ -9,6 +9,7 @@ SETTINGS_CGI::SETTINGS_CGI() {
     this->env_args_used = 0;
     this->args_used = 0;
     this->run_as_user_id = -1;
+    this->plistener_parent = 0;
     
     /* Init PCGI_ENV Environmental Variables */
     this->pcgi_env = 0;
@@ -16,12 +17,139 @@ SETTINGS_CGI::SETTINGS_CGI() {
     this->started = 0;
 }
 
+
+    int SETTINGS_CGI::is_my_file_type( const char *pfile_extension, size_t length) {
+        
+        return 0;
+    }
+    
+    int SETTINGS_CGI::is_my_file_type( const char *pfile_extension) {
+        return this->is_my_file_type((const char *)pfile_extension, (size_t)strlen(pfile_extension));
+    }
+    
+    int SETTINGS_CGI::is_my_file_type( char *pfile_extension, size_t length) {
+        return this->is_my_file_type((const char *)pfile_extension, length);
+    }
+    
+    int SETTINGS_CGI::is_my_file_type( char *pfile_extension) {
+        return this->is_my_file_type((const char *)pfile_extension, (size_t)strlen(pfile_extension));
+    }
+
+
 CGI_ID SETTINGS_CGI::start( void ) {
+    int i = 0, j = 0;
+    char *ptr = 0;
     size_t total_env_vars = 0, extra_env_vars = 0,
             total_arg_vars = 0;
+    struct passwd *pwd = 0;
     if (this->started == 1) return this->cgi;
     
-    // Working here!!!!
+    total_arg_vars = this->args_used;
+    if (this->path_to_interpreter.length() > 0) {
+        total_arg_vars++;
+        ptr = this->path_to_interpreter.val();
+        /* Check to see if we have a duplicate "interpreter path " */
+        for (i = 0; i < 30; i++) {
+            if (this->cgi_arg[i].value.equals(ptr)) {
+                this->cgi_arg[i].value.clear();
+                total_arg_vars--;
+            }
+        }
+    }
+    
+    if (this->path_to_interpreter.length() == 0) {
+        error("Cannot start the CGI interpreters without a PATH and FILENAME of the interpreter to execute!\n");
+        return 0;
+    }
+    
+    this->cgi_argv = (char **)malloc(   (sizeof(char *) * (total_arg_vars + 1))     );
+    
+    memset(this->cgi_argv, 0, (sizeof(char *) * (total_arg_vars + 1)));
+    
+    this->cgi_argv[0] = this->path_to_interpreter.val();
+    for (i = 0; i < this->args_used; i++) {
+        this->cgi_argv[(i+1)] = this->cgi_arg[i].value.val();
+    }
+    this->pcgi_env = (PCGI_ENV)malloc(sizeof(CGI_ENV));
+    memset(this->pcgi_env, 0, sizeof(CGI_ENV));
+    
+    /* If the hostname was defined in the <cgi> context, use it, otherwise use the server name from the LISTENER */
+    this->pcgi_env->hostname = ((this->hostname.length() > 0)?this->hostname.val():this->plistener_parent->server_name.val());
+    
+    total_env_vars = this->env_args_used;
+    
+    if (this->home_dir.length() > 0) {
+        this->pcgi_env->homedir = this->home_dir.val();
+    }
+    
+    /* Remove duplicate environmental variables */
+    
+    for (i = 0; i < this->env_args_used; i++) {
+        if (this->cgi_env[i].name.equals("HOME")) {
+            if (this->home_dir.length() == 0) {
+                this->home_dir.set(this->cgi_env[i].value.val());
+            }
+            this->cgi_env[i].name.clear();
+            total_env_vars--;
+        } else if (this->cgi_env[i].name.equals("USER")) {
+            if (this->run_as_user.length() == 0) {
+                this->run_as_user.set(this->cgi_env[i].value.val());
+                /* Get the user's ID here and true home dir */
+                pwd = getpwnam(this->run_as_user.val());
+                if (pwd) {
+                    this->run_as_user_id = pwd->pw_uid;
+                    this->home_dir.set(pwd->pw_dir);
+                }
+            }
+            this->cgi_env[i].name.clear();
+            total_env_vars--;
+        } else if (this->cgi_env[i].name.equals("LOGNAME")) {
+            if (this->run_as_user.length() == 0) {
+                this->run_as_user.set(this->cgi_env[i].value.val());
+                /* Get the user's ID here and true home dir */
+                pwd = getpwnam(this->run_as_user.val());
+                if (pwd) {
+                    this->run_as_user_id = pwd->pw_uid;
+                    this->home_dir.set(pwd->pw_dir);
+                }
+            }
+            this->cgi_env[i].name.clear();
+            total_env_vars--;
+        } else if (this->cgi_env[i].name.equals("PWD")) {
+            if (this->working_dir.length() == 0) {
+                this->working_dir.set(this->cgi_env[i].value.val());
+            }
+            this->cgi_env[i].name.clear();
+            total_env_vars--;
+        } else if (this->cgi_env[i].name.equals("PATH")) {
+            this->pcgi_env->path = this->cgi_env[i].value.val();
+            this->cgi_env[i].name.clear(); // Clear the NAME, NOT the VALUE.  We will need a pointer to it later.
+            total_env_vars--;
+        } else if (this->cgi_env[i].name.equals("HOSTNAME")) {
+            if (this->hostname.length() == 0) {
+                this->hostname.set(this->cgi_env[i].value.val());
+            }
+            this->cgi_env[i].name.clear();
+            total_env_vars--;
+        } 
+    }
+    
+    this->pcgi_env->user = this->run_as_user.val();
+    this->pcgi_env->working_dir = this->working_dir.val();
+    this->pcgi_env->envp; // Any other env vars we haven't put in the right place.
+    this->pcgi_env->vcount; // The number of elements in "envp" 
+    this->pcgi_env->envp = (char **)malloc( sizeof(char *) * (total_env_vars + 1));
+    memset(this->pcgi_env->envp, 0, (sizeof(char *) * (total_env_vars + 1)));
+    j = 0;
+    for (i = 0; i < total_env_vars; i++) {
+        if (this->cgi_env[i].name.length() > 0) {
+            this->pcgi_env->envp[j] = (char *)malloc( ((this->cgi_env[i].name.length() + this->cgi_env[i].value.length()) + 10));
+            sprintf(this->pcgi_env->envp[j], "%s=%s",
+                    this->cgi_env[i].name.val(),
+                     this->cgi_env[i].value.val());
+            j++;
+        }
+    }
     
 //    this->pcgi_env->envp = 0; /* List of additional environmental variables, those in addition to the pre-defined ones below */
 //    this->pcgi_env->homedir = 0;
@@ -31,9 +159,22 @@ CGI_ID SETTINGS_CGI::start( void ) {
 //    this->pcgi_env->vcount = 0;
 //    this->pcgi_env->working_dir = 0;
     
+//typedef struct _cgi_env {
+//    char **envp;
+//    char *path;
+//    char *user;
+//    char *homedir;
+//    char *working_dir;
+//    char *hostname;
+//    size_t vcount;
+//} CGI_ENV, *PCGI_ENV;
+
     
     
-    this->cgi = cgi_register_interpreter_argv(this->pcgi_env, this->worker_count, this->cgi_argv);
+    
+    printf("Starting CGI interpreters...\n");
+//    this->cgi = cgi_register_interpreter_argv(this->pcgi_env, this->worker_count, this->cgi_argv);
+    return this->cgi;
 }
 
 int SETTINGS_CGI::stop( void ) {
@@ -46,7 +187,7 @@ int SETTINGS_CGI::stop( void ) {
 char *SETTINGS_CGI::process( const char *pscript, size_t script_len ) {
     this->cgi_result.output = 0;
     this->cgi_result.output_length = 0;
-    this->cgi_result.output = cgi(this->cgi, pscript, script_len, &this->cgi_result.output_length);
+    this->cgi_result.output = cgi_exec(this->cgi, pscript, script_len, &this->cgi_result.output_length);
     return this->cgi_result.output;
 }
 
@@ -408,7 +549,7 @@ int SETTINGS::load( const char *path_to_settings ) {
     DELEGATE *pdelegate = 0;
     size_t line_length = 0;
     JSTRING::jsstring val, key, string,  **list = 0;
-    int i = 0;
+    int i = 0, j = 0;
     void *swap = 0;
     
     memset(sub_list, SC_UNDEFINED, sizeof(sub_list));
@@ -652,23 +793,49 @@ int SETTINGS::load( const char *path_to_settings ) {
                             );
                         if (psetting_cgi) {
                             if (key.is("env_")) { /* Add a new environmental variable */
-                                if (psetting_cgi->env_args_used < 30) {
-                                    psetting_cgi->cgi_env[psetting_cgi->env_args_used].name.set( &key.ptr[4], key.length-4);
-                                    psetting_cgi->cgi_env[(psetting_cgi->env_args_used++)].value.set(val.ptr, val.length);
-                                } else {
-                                    error("Only 30 (thirty) max environmental variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
+                                // Make sure we don't have it already
+                                int _cgi_okay_to_add = 1;
+                                for (i = 0; i < psetting_cgi->env_args_used; i++) {
+                                    if (psetting_cgi->cgi_env[i].name.equals(&key.ptr[4], key.length-4)) {
+                                        _cgi_okay_to_add = 0;
+                                        break;
+                                    }
+                                }
+                                if (_cgi_okay_to_add) {
+                                    if (psetting_cgi->env_args_used < 30) {
+                                        psetting_cgi->cgi_env[psetting_cgi->env_args_used].name.set( &key.ptr[4], key.length-4);
+                                        psetting_cgi->cgi_env[(psetting_cgi->env_args_used++)].value.set(val.ptr, val.length);
+                                    } else {
+                                        error("Only 30 (thirty) max environmental variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
+                                    }
                                 }
                             } else if (key.is("interpreter_args")) { // CGI ... Comma delimited list 
                                 list = JSTRING::split(val.ptr, ',', val.length);
                                 if (list) {
-                                    for (i = 0; list[i]; i++) {
-                                        if (psetting_cgi->args_used < 30) {
-                                            psetting_cgi->cgi_arg[(psetting_cgi->args_used++)].value.set(list[i]->ptr, list[i]->length);
-                                        } else {
-                                            error("Only 30 (thirty) max argv variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
+                                    int _cgi_okay_to_add = 1;
+                                    /* Make sure we don't already have this arg */
+                                    
+                                    if (psetting_cgi->path_to_interpreter.equals(list[i]->ptr, list[i]->length))
+                                        _cgi_okay_to_add = 0;
+                                    else
+                                        for (i = 0; i < psetting_cgi->args_used; i++) {
+                                            if (psetting_cgi->cgi_arg[i].value.equals(list[i]->ptr, list[i]->length)) {
+                                                _cgi_okay_to_add = 0;
+                                                break;
+                                            }
+                                        }
+                                    if (_cgi_okay_to_add) {
+                                        for (i = 0; list[i]; i++) {
+                                            if (psetting_cgi->args_used < 30) {
+                                                psetting_cgi->cgi_arg[(psetting_cgi->args_used++)].value.set(list[i]->ptr, list[i]->length);
+                                            } else {
+                                                error("Only 30 (thirty) max argv variables allowed per registered CGI interpreter.  Over the limit at line %d\n", current_line_number);
+                                            }
                                         }
                                     }
                                 }
+                            } else if (key.is("hostname")) { // CGI
+                                psetting_cgi->hostname.set(val.ptr, val.length);
                             } else if (key.is("interpreter_path")) { // CGI
                                 psetting_cgi->path_to_interpreter.set(val.ptr, val.length);
                             } else if (key.is("accept_type")) { //CGI ... Comma delimited list 
@@ -793,7 +960,8 @@ int SETTINGS::load( const char *path_to_settings ) {
                                 if (!pdelegate) {
                                     error("*** Failed to initialize 'psetting_cgi' to save a CGI entry ***\n");
                                     return 0;
-                                }                                
+                                }                        
+                                pdelegate->plistner_parent = l;
                             } else if (string.is("cgi")) {
                                 sub_list[++sub_itr] = SC_CGI;
                                 sub = &sub_list[sub_itr];
@@ -830,7 +998,7 @@ int SETTINGS::load( const char *path_to_settings ) {
                                     error("*** Failed to initialize 'psetting_cgi' to save a CGI entry ***\n");
                                     return 0;
                                 }
-                                
+                                psetting_cgi->plistener_parent = l;
                             } else if (string.is("file")) {
                                 sub_list[++sub_itr] = SC_FILE;
                                 sub = &sub_list[sub_itr];

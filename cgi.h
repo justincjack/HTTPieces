@@ -275,7 +275,7 @@ extern "C" {
      *                        the output of the script.
      * \return On FAILURE   - A NULL pointer (ZERO)
      **/
-    char            *cgi(CGI_ID cgi_id, const char *pscript, size_t script_len, size_t *output_size);
+    char            *cgi_exec(CGI_ID cgi_id, const char *pscript, size_t script_len, size_t *output_size);
     
     /*!
      * \brief Loads a file from into a memory buffer.
